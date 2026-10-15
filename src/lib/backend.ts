@@ -85,6 +85,15 @@ export interface BackendNotification {
   created_at: string
 }
 
+export interface BackendInterestDistribution {
+  id: number
+  ledger: number
+  amount: string
+  active_members: number
+  tx_hash: string | null
+  created_at: string
+}
+
 export interface BackendEvent {
   id: string
   ledger: number
@@ -174,6 +183,20 @@ export const isBackendEvent = (value: unknown): value is BackendEvent => {
     isString(value.closed_at) &&
     isString(value.contract_id) &&
     isString(value.symbol) &&
+    isNullableString(value.tx_hash) &&
+    isString(value.created_at)
+  )
+}
+
+export const isBackendInterestDistribution = (
+  value: unknown
+): value is BackendInterestDistribution => {
+  if (!isRecord(value)) return false
+  return (
+    isNumber(value.id) &&
+    isNumber(value.ledger) &&
+    isString(value.amount) &&
+    isNumber(value.active_members) &&
     isNullableString(value.tx_hash) &&
     isString(value.created_at)
   )
@@ -385,6 +408,22 @@ export const backend = {
 
   getAdminLog: (limit = 50) =>
     get<BackendEvent[]>(`/api/admin/log?limit=${limit}`, [], arrayOf(isBackendEvent)),
+
+  getInterestDistributions: (options?: { before?: number; limit?: number }) => {
+    const params = new URLSearchParams()
+    if (options?.before !== undefined && options?.before !== null) {
+      params.set('before', String(options.before))
+    }
+    if (options?.limit !== undefined && options?.limit !== null) {
+      params.set('limit', String(options.limit))
+    }
+    const qs = params.toString()
+    return get<BackendInterestDistribution[]>(
+      qs ? `/api/interest?${qs}` : '/api/interest',
+      [],
+      arrayOf(isBackendInterestDistribution)
+    )
+  },
 
   markNotificationRead: (id: number, signer: AuthSigner) =>
     patch(`/api/notifications/${id}/read`, signer),

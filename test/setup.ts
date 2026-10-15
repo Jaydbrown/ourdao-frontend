@@ -3,6 +3,7 @@ import { afterEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
 
 process.env.NEXT_PUBLIC_BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000'
+process.env.NEXT_PUBLIC_IPFS_GATEWAY = process.env.NEXT_PUBLIC_IPFS_GATEWAY || 'https://gateway.pinata.cloud/ipfs/'
 
 // `globals: false` in vitest.config.mts means RTL's own auto-cleanup (which
 // relies on detecting a global `afterEach`) never registers, so a page

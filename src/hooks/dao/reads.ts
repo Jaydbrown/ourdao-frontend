@@ -279,3 +279,22 @@ export function useDAOEvents() {
   const setEvents = () => {}
   return { events, setEvents, isError, refetch }
 }
+
+/** Interest distributions history from ourdao-backend with optional cursor pagination. */
+export function useInterestDistributions(options?: { before?: number; limit?: number }) {
+  const backendConfigured = isBackendConfigured()
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: queryKeys.interestDistributions(options?.before),
+    enabled: backendConfigured,
+    queryFn: () => backend.getInterestDistributions(options),
+    refetchInterval: backendConfigured ? QUERY_REFRESH_INTERVAL_MS : false,
+    refetchIntervalInBackground: false,
+  })
+
+  return {
+    distributions: data ?? [],
+    isLoading,
+    isError,
+    refetch,
+  }
+}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useRef } from 'react'
-import { useWallet } from '@/lib/wallet'
+import { useOptionalWallet } from '@/lib/wallet'
 import { 
   CloudArrowUpIcon, 
   EyeIcon, 
@@ -35,7 +35,7 @@ export default function DocumentUpload({
   requireEncryption = false,
   showPermissions = true
 }: DocumentUploadProps) {
-  const { address, signMessage } = useWallet()
+  const { address, signMessage } = useOptionalWallet()
   const [files, setFiles] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -105,7 +105,7 @@ export default function DocumentUpload({
     setUploadProgress(0)
 
     try {
-      const wallet = address ? { address, signMessage } : undefined
+      const wallet = address && signMessage ? { address, signMessage } : undefined
       const uploadedDocuments = await uploadMultipleDocuments(
         files,
         encrypt,
@@ -119,13 +119,11 @@ export default function DocumentUpload({
       // `permissions` undefined marks them closed-by-default (see ipfs.ts).
       const documentsWithPermissions = uploadedDocuments.map((doc) => ({
         ...doc,
-        permissions: encrypt
-          ? {
-              public: permissions.public,
-              allowedUsers: permissions.allowedUsers,
-              allowedRoles: permissions.allowedRoles,
-            }
-          : undefined,
+        permissions: {
+          public: permissions.public,
+          allowedUsers: permissions.allowedUsers,
+          allowedRoles: permissions.allowedRoles,
+        },
       }))
 
       onUpload?.(documentsWithPermissions)

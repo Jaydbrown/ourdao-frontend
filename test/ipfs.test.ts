@@ -12,6 +12,7 @@ import {
   decryptBytes,
   PBKDF2_ITERATIONS,
 } from '@/lib/ipfs'
+import { computeIPFSCIDs } from '@/lib/ipfs-cid'
 
 function bytesToBase64(bytes: Uint8Array): string {
   let bin = ''
@@ -28,17 +29,17 @@ async function legacyEncrypt(
   const salt = opts.salt ?? crypto.getRandomValues(new Uint8Array(16))
   const iv = crypto.getRandomValues(new Uint8Array(12))
   const keyMaterial = await crypto.subtle.importKey(
-    'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']
+    'raw', new TextEncoder().encode(password) as unknown as BufferSource, 'PBKDF2', false, ['deriveKey']
   )
   const key = await crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: opts.iterations, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: salt as unknown as BufferSource, iterations: opts.iterations, hash: 'SHA-256' },
     keyMaterial,
     { name: 'AES-GCM', length: 256 },
     false,
     ['encrypt']
   )
   const data = typeof plaintext === 'string' ? new TextEncoder().encode(plaintext) : plaintext
-  const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data))
+  const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data as unknown as BufferSource))
   const prefix = opts.marker ? [1] : []
   const combined = new Uint8Array(prefix.length + 16 + 12 + encrypted.length)
   combined.set(prefix, 0)
@@ -113,7 +114,7 @@ describe('encryptBytes / decryptBytes', () => {
     const plaintext = new TextEncoder().encode('stored before the binary envelope')
     const combined = await legacyEncrypt(plaintext, 'pw', { iterations: 600_000, marker: true })
     const storedBytes = new TextEncoder().encode(bytesToBase64(combined))
-    expect(await decryptBytes(storedBytes, 'pw')).toEqual(plaintext)
+    expect(Array.from(await decryptBytes(storedBytes, 'pw'))).toEqual(Array.from(plaintext))
   })
 
   it('rejects an envelope whose header was tampered with', async () => {
@@ -268,11 +269,12 @@ describe('downloadFromIPFS', () => {
 
   it('fetches from the public gateway and returns the raw bytes when not encrypted', async () => {
     const bytes = new TextEncoder().encode('plain content')
+    const cid = computeIPFSCIDs(bytes).cidV0
     vi.mocked(fetch).mockResolvedValueOnce(bytesResponse(bytes))
 
-    const result = await downloadFromIPFS('QmSomeHash', false)
+    const result = await downloadFromIPFS(cid, false)
 
-    expect(fetch).toHaveBeenCalledWith(expect.stringContaining('QmSomeHash'), expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining(cid), expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(new TextDecoder().decode(result.content)).toBe('plain content')
     expect(result.decrypted).toBe(false)
   })
@@ -280,9 +282,10 @@ describe('downloadFromIPFS', () => {
   it('decrypts the fetched bytes when encrypted and a password is given', async () => {
     const encrypted = await encryptData('secret contents', 'pw')
     const bytes = new TextEncoder().encode(encrypted)
+    const cid = computeIPFSCIDs(bytes).cidV0
     vi.mocked(fetch).mockResolvedValueOnce(bytesResponse(bytes))
 
-    const result = await downloadFromIPFS('QmSomeHash', true, 'pw')
+    const result = await downloadFromIPFS(cid, true, 'pw')
 
     expect(new TextDecoder().decode(result.content)).toBe('secret contents')
     expect(result.decrypted).toBe(true)
@@ -290,23 +293,27 @@ describe('downloadFromIPFS', () => {
 
   it('decrypts a binary envelope fetched from the gateway', async () => {
     const original = new Uint8Array([0xff, 0x00, 0x80, 0xfe, 0x25])
-    vi.mocked(fetch).mockResolvedValueOnce(bytesResponse(await encryptBytes(original, 'pw')))
+    const bytes = await encryptBytes(original, 'pw')
+    const cid = computeIPFSCIDs(bytes).cidV0
+    vi.mocked(fetch).mockResolvedValueOnce(bytesResponse(bytes))
 
-    const result = await downloadFromIPFS('QmSomeHash', true, 'pw')
+    const result = await downloadFromIPFS(cid, true, 'pw')
 
     expect(result.content).toEqual(original)
     expect(result.decrypted).toBe(true)
   })
 
   it('throws a visible error when the gateway request fails, not a mock fallback', async () => {
+    const cid = computeIPFSCIDs(new Uint8Array([1, 2, 3])).cidV0
     vi.mocked(fetch).mockResolvedValueOnce(bytesResponse(new Uint8Array(), false, 404))
-    await expect(downloadFromIPFS('QmMissing')).rejects.toThrow(/404/)
+    await expect(downloadFromIPFS(cid)).rejects.toThrow(/404/)
   })
 })
 
 describe('getIPFSUrl', () => {
   it('builds a URL against the configured gateway', () => {
-    expect(getIPFSUrl('QmSomeHash')).toContain('QmSomeHash')
+    const cid = computeIPFSCIDs(new Uint8Array([1])).cidV0
+    expect(getIPFSUrl(cid)).toContain(cid)
   })
 })
 
@@ -326,22 +333,25 @@ describe('IPFS end-to-end binary round-trip', () => {
     }
     const file = new File([originalBytes], 'binary.dat', { type: 'application/octet-stream' })
 
+    let uploadedBytes: Uint8Array | null = null
+
     // Mock upload response
-    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ hash: 'QmBinaryHash' }))
+    vi.mocked(fetch).mockImplementation(async (url, init) => {
+      if (String(url).includes('/api/documents')) {
+        const body = init?.body as Blob
+        uploadedBytes = new Uint8Array(await body.arrayBuffer())
+        const cid = computeIPFSCIDs(uploadedBytes).cidV0
+        return jsonResponse({ hash: cid })
+      }
+      if (uploadedBytes) {
+        return bytesResponse(uploadedBytes)
+      }
+      return bytesResponse(new Uint8Array())
+    })
 
     const uploadResult = await uploadToIPFS(file, true, 'strong-pass')
-    expect(uploadResult.hash).toBe('QmBinaryHash')
 
-    // Extract posted ciphertext body from upload call
-    const [, uploadInit] = vi.mocked(fetch).mock.calls[0]
-    const uploadedBlob = uploadInit!.body as Blob
-    const ciphertextBuffer = await uploadedBlob.arrayBuffer()
-    const ciphertextBytes = new Uint8Array(ciphertextBuffer)
-
-    // Mock download response returning the exact ciphertext
-    vi.mocked(fetch).mockResolvedValueOnce(bytesResponse(ciphertextBytes))
-
-    const downloadResult = await downloadFromIPFS('QmBinaryHash', true, 'strong-pass')
+    const downloadResult = await downloadFromIPFS(uploadResult.hash, true, 'strong-pass')
     expect(downloadResult.content).toEqual(originalBytes)
   })
 })

@@ -44,6 +44,7 @@ describe('error-reporting — scrubbing when opted in', () => {
 
   afterEach(() => {
     window.localStorage.clear()
+    vi.restoreAllMocks()
   })
 
   it('scrubs a Stellar address out of the error message before reporting', () => {

@@ -54,32 +54,78 @@ function buildImageRemotePatterns() {
   return patterns;
 }
 
-export { buildImageRemotePatterns };
+/**
+ * Build an env-driven Content-Security-Policy.
+ */
+function buildCsp(): string {
+  const rpcUrl = process.env.NEXT_PUBLIC_SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
+  // NEXT_PUBLIC_IPFS_GATEWAY may be a comma-separated list of gateways.
+  const ipfsGateways = (process.env.NEXT_PUBLIC_IPFS_GATEWAY || "https://gateway.pinata.cloud/ipfs/")
+    .split(",")
+    .map((g) => g.trim())
+    .filter(Boolean);
+
+  const origins = new Set<string>();
+
+  for (const raw of [rpcUrl, backendUrl, ...ipfsGateways]) {
+    try {
+      const u = new URL(raw);
+      origins.add(u.origin);
+    } catch {
+      // Ignore malformed env values — don't break the build
+    }
+  }
+
+  // Allow ws/wss variants for local dev HMR and any WS-based RPC endpoint.
+  const wsOrigins = new Set<string>();
+  for (const o of origins) {
+    try {
+      const u = new URL(o);
+      if (u.protocol === "http:") wsOrigins.add(`ws://${u.host}`);
+      if (u.protocol === "https:") wsOrigins.add(`wss://${u.host}`);
+    } catch {
+      // ignore
+    }
+  }
+
+  const connectSrc = [
+    "'self'",
+    ...Array.from(origins),
+    ...Array.from(wsOrigins),
+    "ws://localhost:*",
+    "wss://localhost:*",
+  ].join(" ");
+
+  const directives = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    `connect-src ${connectSrc}`,
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "worker-src 'self' blob:",
+    "media-src 'self' blob: data:",
+  ];
+
+  return directives.join("; ");
+}
+
+export { buildImageRemotePatterns, buildCsp };
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   poweredByHeader: false,
   turbopack: {},
-  // Emits `.map` files beside the client chunks in `.next/static`, which is
-  // what lets `scripts/bundle-size.mjs composition` attribute shipped bytes to
-  // the package that produced them (#266) — Turbopack's minified chunks name
-  // no modules, so without a map a size regression can be detected but not
-  // explained.
-  //
-  // Opt-in rather than always on: source maps for the whole client roughly
-  // double build output and add time, and only the bundle job needs them. The
-  // `bundle-size` npm script and the CI job set ANALYZE_BUNDLE=1.
   productionBrowserSourceMaps: process.env.ANALYZE_BUNDLE === "1",
-  // Surfaced in the UI by src/lib/build-info.ts so a bug report can name the
-  // build and match it to a CHANGELOG.md entry (#250). The SHA comes from the
-  // deploy platform (Vercel) or CI (GitHub Actions); absent locally.
   env: {
     NEXT_PUBLIC_APP_VERSION: version,
     NEXT_PUBLIC_GIT_SHA: process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA || "",
   },
-  // `page.dev.tsx` routes (the /dev/components catalogue, #253) exist only
-  // under `next dev`. `next build` sets NODE_ENV=production, so there the file
-  // is an ordinary non-route file nothing imports, and it never reaches the
-  // production bundle.
   pageExtensions:
     process.env.NODE_ENV === "production"
       ? ["tsx", "ts", "jsx", "js"]
@@ -88,9 +134,44 @@ const nextConfig: NextConfig = {
     formats: ["image/avif", "image/webp"],
     remotePatterns: buildImageRemotePatterns(),
   },
-  // Security headers (including CSP) are now set in src/middleware.ts to
-  // support per-request nonce generation for script-src. See middleware.ts
-  // for the nonce-based CSP policy and rationale.
+  async headers() {
+    const csp = buildCsp();
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: csp,
+          },
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000; includeSubDomains; preload",
+          },
+          {
+            key: "X-Content-Type-Options",
+            value: "nosniff",
+          },
+          {
+            key: "Referrer-Policy",
+            value: "strict-origin-when-cross-origin",
+          },
+          {
+            key: "X-Frame-Options",
+            value: "DENY",
+          },
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=(), interest-cohort=(), browsing-topics=()",
+          },
+          {
+            key: "Cross-Origin-Opener-Policy",
+            value: "same-origin",
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

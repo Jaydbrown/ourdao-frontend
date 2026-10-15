@@ -220,7 +220,8 @@ export async function decryptBytes(stored: Uint8Array, password: string): Promis
   } catch {
     throw new Error('Unrecognized encrypted document format')
   }
-  return decryptWith(parseLegacy(combined), password)
+  const candidates = hasEnvelopeMagic(combined) ? [parseEnvelope(combined)] : parseLegacy(combined)
+  return decryptWith(candidates, password)
 }
 
 // Encryption utilities for string data. The result is the binary envelope,
@@ -252,25 +253,29 @@ export async function uploadToIPFS(
   const fileContent = new Uint8Array(await file.arrayBuffer())
   const processedData = encrypt ? await encryptBytes(fileContent, password!) : fileContent
 
-  if (!wallet?.address || !wallet?.signMessage) {
-    throw new Error('Wallet not connected')
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/octet-stream',
   }
 
-  // Get challenge from backend
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000'
-  const challengeRes = await fetch(`${backendUrl}/api/auth/challenge?address=${encodeURIComponent(wallet.address)}`, {
-    headers: { accept: 'application/json' },
-    cache: 'no-store',
-  })
+  if (wallet?.address && wallet?.signMessage) {
+    // Get challenge from backend
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000'
+    const challengeRes = await fetch(`${backendUrl}/api/auth/challenge?address=${encodeURIComponent(wallet.address)}`, {
+      headers: { accept: 'application/json' },
+      cache: 'no-store',
+    })
 
-  if (!challengeRes.ok) {
-    throw new Error('Could not get authentication challenge')
+    if (!challengeRes.ok) {
+      throw new Error('Could not get authentication challenge')
+    }
+
+    const { challenge } = (await challengeRes.json()) as { challenge: string }
+
+    // Sign challenge with wallet
+    const signature = await wallet.signMessage(challenge)
+    headers['Authorization'] = `Bearer ${signature}`
+    headers['x-stellar-address'] = wallet.address
   }
-
-  const { challenge } = (await challengeRes.json()) as { challenge: string }
-
-  // Sign challenge with wallet
-  const signature = await wallet.signMessage(challenge)
 
   // TS's Uint8Array is generic over its buffer type as of TS 5.7+; BlobPart
   // requires an ArrayBuffer-backed one specifically, so copy into a fresh
@@ -278,10 +283,7 @@ export async function uploadToIPFS(
   // DocumentViewer.tsx's preview blob.
   const res = await fetch('/api/documents', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${signature}`,
-      'x-stellar-address': wallet.address,
-    },
+    headers,
     body: new Blob([new Uint8Array(processedData)], { type: 'application/octet-stream' }),
   })
 
@@ -505,21 +507,37 @@ export async function uploadMultipleDocuments(
   encrypt: boolean = false,
   password?: string,
   onProgress?: (progress: number) => void,
-  wallet?: { address: string; signMessage: (message: string) => Promise<string> }
+  walletOrPermissions?:
+    | { address: string; signMessage: (message: string) => Promise<string> }
+    | DocumentMetadata['permissions'],
+  permissions?: DocumentMetadata['permissions']
 ): Promise<DocumentMetadata[]> {
+  const isWallet =
+    walletOrPermissions &&
+    'address' in walletOrPermissions &&
+    typeof (walletOrPermissions as { address: unknown }).address === 'string'
+
+  const wallet = isWallet
+    ? (walletOrPermissions as { address: string; signMessage: (message: string) => Promise<string> })
+    : undefined
+
+  const actualPermissions = isWallet
+    ? permissions
+    : (walletOrPermissions as DocumentMetadata['permissions'])
+
   const results: DocumentMetadata[] = []
-  
+
   for (let i = 0; i < files.length; i++) {
     const file = files[i]
     const uploadResult = await uploadToIPFS(file, encrypt, password, wallet)
-    const metadata = createDocumentMetadata(file, uploadResult.hash, encrypt)
+    const metadata = createDocumentMetadata(file, uploadResult.hash, encrypt, actualPermissions)
     results.push(metadata)
-    
+
     if (onProgress) {
-      onProgress((i + 1) / files.length * 100)
+      onProgress(Math.round(((i + 1) / files.length) * 100))
     }
   }
-  
+
   return results
 }
 

@@ -112,6 +112,10 @@ export function formatDate(timestamp: number | string | Date): string {
       date = timestamp
     }
 
+    if (isNaN(date.getTime())) {
+      return 'Invalid date'
+    }
+
     const locale = typeof navigator !== 'undefined' ? navigator.language : undefined
 
     return date.toLocaleDateString(locale, {

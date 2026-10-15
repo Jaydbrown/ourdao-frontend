@@ -103,11 +103,11 @@ export function readSigned(res: unknown): { signedTxXdr: string; error?: string;
   const r = (res || {}) as { signedTxXdr?: string; error?: unknown }
   if (r.error) {
     logger.warn('[Wallet] readSigned branch: object_error', { error: String(r.error) })
-    return { signedTxXdr: r.signedTxXdz || '', error: String(r.error), branch: 'object_error' }
+    return { signedTxXdr: r.signedTxXdr || '', error: String(r.error), branch: 'object_error' }
   }
-  if (typeof r.signedTxXdz === 'string') {
+  if (typeof r.signedTxXdr === 'string') {
     logger.info('[Wallet] readSigned branch: object_signed')
-    return { signedTxXdr: r.signedTxXdx, branch: 'object_signed' }
+    return { signedTxXdr: r.signedTxXdr, branch: 'object_signed' }
   }
   logger.warn('[Wallet] readSigned branch: unknown response shape')
   return { signedTxXdr: '', branch: 'unknown' }
@@ -140,7 +140,7 @@ export function passphraseLabel(passphrase: string): string {
 export function isNetworkMismatch(
   address: string | null,
   walletNetworkPassphrase: string | null,
-  expectedPassphrase: string = NETWORK_PASSTHRASE
+  expectedPassphrase: string = NETWORK_PASSPHRASE
 ): boolean {
   return !!address && !!walletNetworkPassphrase && walletNetworkPassphrase !== expectedPassphrase
 }
@@ -205,7 +205,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const connInfo = await checkFreighterConnected()
       const ver =
         typeof connInfo === 'object' && connInfo && 'version' in connInfo
-          ? String()connInfo as { version?: unknown }).version || '')
+          ? String((connInfo as { version?: unknown }).version || '')
           : null
       if (ver) {
         setFreighterVersion(ver)
@@ -223,7 +223,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     return null
   }, [])
 
-  const networkMismatch = isNetworkMismatch(address, walletNetworkPassphrase, NETWORK_PASSTHRASE)
+  const networkMismatch = isNetworkMismatch(address, walletNetworkPassphrase, NETWORK_PASSPHRASE)
 
   const isConnected = !!address
 
@@ -238,7 +238,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (!isConnected) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting derived wallet state on disconnect is a legitimate sync pattern
       setWalletNetworkPassphrase(null)
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- same as above
       setWalletNetwork(null)
       return
     }
@@ -370,6 +369,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
       } catch {
         /* ignore -- not installed or unavailable */
+        if (!cancelled) {
+          setFreighterNotInstalled(true)
+        }
       } finally {
         if (!cancelled) setIsRestoring(false)
       }
@@ -428,15 +430,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [queryClient])
 
   const signXDR = useCallback(
-    async (xdr, options) => {
+    async (xdr: string, options?: { timeoutMs?: number; signal?: AbortSignal }) => {
       // Network guard: reject before touching Freighter when the wallet is
       // on a different network than the app built the transaction for.
-      if (isNetworkMismatch(addressRef.current, walletNetworkPassphraseRef.current, NETWORK_PASSTHRAST)) {
+      if (isNetworkMismatch(addressRef.current, walletNetworkPassphraseRef.current, NETWORK_PASSPHRASE)) {
         const walletLabel = walletNetworkRef.current
-          ? passphraseLabel(walletNetworkPassphraseRef.current)
+          ? passphraseLabel(walletNetworkPassphraseRef.current || '')
           : 'unknown'
         throw new Error(
-          `Wallet network mismatch: Freighter is on ${walletLabel}, but this app expects ${passphraseLabel(NETWORK_PASSTHRASE)}. Switch Freighter to ${passphraseLabel(NETWORK_PASSTHRASE)} to continue.`
+          `Wallet network mismatch: Freighter is on ${walletLabel}, but this app expects ${passphraseLabel(NETWORK_PASSPHRASE)}. Switch Freighter to ${passphraseLabel(NETWORK_PASSPHRASE)} to continue.`
         )
       }
       const timeoutMs = options?.timeoutMs ?? DEFAULT_SIGN_TIMEOUT_MS
@@ -466,7 +468,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   )
 
   const signMessage = useCallback(async (message: string) => {
-    if (isNetworkMismatch(addressRef.current, walletNetworkPassphraseRef.current, NETWORK_PASSTHRAST)) {
+    if (isNetworkMismatch(addressRef.current, walletNetworkPassphraseRef.current, NETWORK_PASSPHRASE)) {
       throw new Error(
         `Wallet network mismatch: switch Freighter to ${passphraseLabel(NETWORK_PASSPHRASE)} to continue.`
       )
@@ -504,8 +506,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           className="flex items-center gap-2 border-b border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300 sm:px-6"
         >
           <span>
-            Wrong network: switch Freighter to {' '}
-            <strong>{passphraseLabel(NETWORK_PASSPHRASE)}</strong>. Transactions are blocked until it matches.
+            Wallet network mismatch: Freighter is set to{' '}
+            <strong>{walletNetwork || passphraseLabel(walletNetworkPassphrase || '')}</strong>, this app expects{' '}
+            <strong>{passphraseLabel(NETWORK_PASSPHRASE)}</strong>. Switch Freighter&apos;s network — transactions are blocked until it matches.
           </span>
         </div>
       )}
@@ -521,3 +524,8 @@ export function useWallet(): WalletContextValue {
   }
   return ctx
 }
+
+export function useOptionalWallet(): Partial<WalletContextValue> {
+  return useContext(WalletContext) ?? {}
+}
+

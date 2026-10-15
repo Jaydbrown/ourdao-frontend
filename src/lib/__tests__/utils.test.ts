@@ -66,8 +66,7 @@ describe('formatToken — fractional inputs are rejected', () => {
     const result = formatToken('1.5')
     expect(result).toBe('—')
     expect(spy).toHaveBeenCalledWith(
-      'formatToken failed:',
-      expect.any(Error),
+      '[error] formatToken failed',
       expect.objectContaining({ value: '1.5' })
     )
     spy.mockRestore()

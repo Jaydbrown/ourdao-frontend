@@ -53,7 +53,7 @@ const ADMIN_ITEM: NavItem = { name: 'Admin', href: '/admin', icon: Settings }
 
 function isActive(pathname: string | null, href: string): boolean {
   if (!pathname) return false
-  return pathname === href || pathname.startsWith(`${href}/")
+  return pathname === href || pathname.startsWith(`${href}/`)
 }
 
 function BrandMark() {

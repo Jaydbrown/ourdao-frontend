@@ -25,7 +25,7 @@ import * as freighter from '@stellar/freighter-api'
 
 const { mockDaoWriteFn } = vi.hoisted(() => ({ mockDaoWriteFn: vi.fn() }))
 
-const TESTNET_PASSTHRASE = Networks.TESTNET
+const TESTNET_PASSPHRASE = Networks.TESTNET
 const PUBLIC_PASSPHRASE = Networks.PUBLIC
 
 type WatchCallback = (params: {
@@ -58,7 +58,7 @@ vi.mock('@stellar/freighter-api', () => ({
 }))
 
 vi.mock('@/lib/stellar', () => ({
-  NETWORK_PASSTHRASE: Networks.TESTNET,
+  NETWORK_PASSPHRASE: Networks.TESTNET,
   getTransactionUrl: (hash: string) => `https://stellar.expert/explorer/testnet/tx/${hash}`,
   getContractUrl: (id: string) => `https://stellar.expert/explorer/testnet/contract/${id}`,
   getAddressUrl: (addr: string) => `https://stellar.expert/explorer/testnet/account/${addr}`,
@@ -112,7 +112,7 @@ describe('issue #241 — passphraseLabel and isNetworkMismatch', () => {
   })
 
   it('detects a mismatch only when connected with a known differing passphrase', () => {
-    expect(isNetworkMismatch('ACCOUNT_A', PUBLIC_PASSPHRASE, TESTNET_PASSTHRASE)).toBe(true)
+    expect(isNetworkMismatch('ACCOUNT_A', PUBLIC_PASSPHRASE, TESTNET_PASSPHRASE)).toBe(true)
     expect(isNetworkMismatch('ACCOUNT_A', TESTNET_PASSPHRASE, TESTNET_PASSPHRASE)).toBe(false)
     expect(isNetworkMismatch(null, PUBLIC_PASSPHRASE, TESTNET_PASSPHRASE)).toBe(false)
     expect(isNetworkMismatch('ACCOUNT_A', null, TESTNET_PASSPHRASE)).toBe(false)
@@ -239,9 +239,9 @@ describe('issue #241 — mismatch banner, guard, and recovery', () => {
 describe('issue P01-015 — Freighter not installed', () => {
   beforeEach(() => {
     watchCallback = null
-    vi.mocked(freighter.isAllowed).mockRejected(new Error('Freighter not installed'))
-    vi.mocked(freighter.getAddress).mockRejected(new Error('Freighter not installed'))
-    vi.mocked(freighter.getNetwork).mockRejected(new Error('Freighter not installed'))
+    vi.mocked(freighter.isAllowed).mockRejectedValue(new Error('Freighter not installed'))
+    vi.mocked(freighter.getAddress).mockRejectedValue(new Error('Freighter not installed'))
+    vi.mocked(freighter.getNetwork).mockRejectedValue(new Error('Freighter not installed'))
   })
 
   afterEach(() => vi.clearAllMocks())

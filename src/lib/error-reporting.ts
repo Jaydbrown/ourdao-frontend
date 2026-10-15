@@ -31,7 +31,7 @@ export const ERROR_REPORTING_OPT_IN_KEY = 'ourdao:error-reporting-opt-in'
 
 // Standard Stellar/Soroban public key shape: 'G' followed by 55 base32
 // characters (A-Z, 2-7). Matches both account and contract-style G-addresses.
-const STELLAR_ADDRESS_PATTERN = /\bG[A-Z2-7]{55}\b/g
+const STELLAR_ADDRESS_PATTERN = /\bG[A-Z2-7]{54,55}\b/g
 
 const REDACTED = '[redacted-address]'
 
@@ -93,8 +93,8 @@ function extractCorrelationId(context?: Record<string, unknown>): string | undef
   if (typeof direct === 'string' && direct) return direct
 
   const headers = context.headers
-  if (headers instanceof Headers) {
-    return headers.get('x-correlation-id') ?? undefined
+  if (headers && typeof (headers as Headers).get === 'function') {
+    return (headers as Headers).get('x-correlation-id') ?? undefined
   }
   if (headers && typeof headers === 'object') {
     const record = headers as Record<string, unknown>

@@ -11,7 +11,7 @@ const networkConfig: Record<string, { label: string; className: string }> = {
 }
 
 export function NetworkBadge() {
-  const { walletNetwork, isConnected, appNetwork } = useWallet()
+  const { walletNetwork, isConnected } = useWallet()
 
   // No wallet connected: don't render a badge
   if (!isConnected || !walletNetwork) {

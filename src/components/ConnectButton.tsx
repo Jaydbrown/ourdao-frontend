@@ -20,7 +20,7 @@ interface CustomRenderProps {
 }
 
 function ConnectButton() {
-  const { address, isConnected, connect, disconnect, connecting, networkMismatch } = useWallet()
+  const { address, isConnected, connect, disconnect, connecting } = useWallet()
 
   if (isConnected && address) {
     return (

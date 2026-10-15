@@ -171,6 +171,28 @@ export function useTreasuryProposals() {
   }
 }
 
+/** A single treasury proposal by id. */
+export function useTreasuryProposal(id: number) {
+  const { data, isLoading, isError, refetch: refetchProposal } = useQuery({
+    queryKey: queryKeys.treasuryProposal(id),
+    meta: { boundary: true },
+    enabled: isContractConfigured() && Number.isFinite(id) && id >= 0,
+    queryFn: () => daoRead.getTreasuryProposal(id),
+  })
+  const { hasVoted, refetch: refetchHasVoted } = useHasVoted('Treasury', id)
+
+  const proposal = useMemo(
+    () => (data ? mapTreasuryProposal(data) : null),
+    [data]
+  )
+
+  const refetch = useCallback(async () => {
+    await Promise.all([refetchProposal(), refetchHasVoted()])
+  }, [refetchProposal, refetchHasVoted])
+
+  return { proposal, isLoading, isError, hasVoted, refetch }
+}
+
 /** The connected member's current stake (in token base units). */
 export function useStake(): bigint {
   const { address } = useWallet()

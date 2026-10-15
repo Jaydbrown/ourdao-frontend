@@ -1,8 +1,10 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { InterestHistory } from '@/components/InterestHistory'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -53,7 +55,9 @@ function TreasuryProposalRow({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <p className="font-medium text-foreground">{p.title}</p>
+            <Link href={`/treasury/${p.id}`} className="font-medium text-foreground hover:underline">
+              {p.title}
+            </Link>
             {p.isPrivate && (
               <Badge variant="secondary" className="text-xs">
                 Private · voting unavailable until commit-reveal
@@ -374,6 +378,9 @@ export default function TreasuryPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Interest Distribution History */}
+        <InterestHistory />
       </div>
     </>
   )
